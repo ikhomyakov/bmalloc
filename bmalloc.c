@@ -303,8 +303,7 @@ static void dumpstats( void )
                continue;
 
           for( c=0,p=hp->nextf[b]; p; p=p->nextf,c++);
-          fprintf( stderr, "B heap=%d, bucket=%d, size=%lu, countf=%d, "
-                           "nm=%d, nf=%d, nm-nf=%d, used=%lu, free=%lu\n", 
+          fprintf( stderr, "B %d/%d(%lu) %d %d/%d/%d %lu/%lu\n", 
                    k, b, b2sz(b), c, 
                    hp->nmalloc[b], hp->nfree[b], (hp->nmalloc[b]-hp->nfree[b]),
                    (hp->nmalloc[b]-hp->nfree[b])*b2sz(b), b2sz(b)*c
@@ -312,15 +311,11 @@ static void dumpstats( void )
           htotfree += c * b2sz(b);
           htotused += (hp->nmalloc[b]-hp->nfree[b]) * b2sz(b);
       }
-      fprintf(stderr, "H heap=%d, used=%lu, free=%lu\n",
-                      k, htotused, htotfree
-      );
+      fprintf(stderr, "H %d %lu/%lu\n", k, htotused, htotfree );
       totused += htotused;
       totfree += htotfree;
   }
-  fprintf(stderr, "S used=%d, free=%d\n",
-                      totused, totfree
-      );
+  fprintf(stderr, "S %lu/%lu\n", totused, totfree);
 }
 
 void *calloc(size_t nelem, size_t elsize)
