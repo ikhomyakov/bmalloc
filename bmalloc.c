@@ -11,7 +11,7 @@
 
 
 union overhead {
-  union	overhead *next;
+  union	overhead *nextf;
   struct {
     unsigned char magic;
     unsigned char bucket;
@@ -31,11 +31,15 @@ static int  init( void );
 static struct heap *gethp( void );
 static void heap_dtor(void *value);
 
+static int initflag1 = 0;
+static int initflag2 = 0;
+
 static size_t pagesz;
 static int    pagebucket;
+
 static pthread_key_t   key;
 
-static int init( void )
+static int init1( void )
 {
   static pthread_mutex_t initlock;
   union overhead *op;
@@ -104,15 +108,18 @@ void *malloc( size_t nbytes)
   int bucket;
   size_t n, amt;
 
-  if( pagesz == 0 ) {
-      if( init() < 0 ) {
+  if( !initflag2 ) {
+      if( !initflag1 ) {
+          if( init() < 0 ) {
+              return( NULL );
+          }
+      }
+      hp = global_heap
+  } else {
+      hp = gethp();
+      if( hp == NULL ) {
           return( NULL );
       }
-  }
-
-  hp = gethp();
-  if( hp == NULL ) {
-      return( NULL );
   }
   
   n = pagesz - sizeof(*op);
@@ -140,7 +147,7 @@ void *malloc( size_t nbytes)
       }
   }
 
-  hp->nextf[bucket] = op->next;
+  hp->nextf[bucket] = op->nextf;
   op->ov.magic  = MAGIC;
   op->ov.bucket  = bucket;
   hp->nmalloc[bucket]++;
@@ -170,10 +177,10 @@ static void morecore(struct heap *hp, int bucket)
 
   hp->nextf[bucket] = op;
   while (--nblks > 0) {
-    op->next = (union overhead *)((char *)op + sz);
+    op->nextf = (union overhead *)((char *)op + sz);
     op = (union overhead *)((char *)op + sz);
   }
-  op->next = 0;
+  op->nextf = NULL;
 }
 
 void free(void *cp)
@@ -194,7 +201,7 @@ void free(void *cp)
   }
 
   bucket = op->ov.bucket;
-  op->next = hp->nextf[bucket];
+  op->nextf = hp->nextf[bucket];
   hp->nextf[bucket] = op;
   hp->nfree[bucket]++;
 }
@@ -260,7 +267,7 @@ static void dumpstats( struct heap *hp )
   union overhead *rv;
   for( i=0; i!=NBUCKETS; i++ ) {
       count=0;
-      for( rv=hp->nextf[i]; rv; rv=rv->next ) {
+      for( rv=hp->nextf[i]; rv; rv=rv->nextf ) {
           count++;
       }
       if( count )
@@ -281,7 +288,7 @@ static void mstats( struct heap *hp, char *s)
            s, (unsigned int)pthread_self() );
 
   for( i=0; i!=NBUCKETS; i++) {
-      for( j=0,p=hp->nextf[i]; p; p=p->next,j++) {
+      for( j=0,p=hp->nextf[i]; p; p=p->nextf,j++) {
       }
       fprintf( stderr, " %d", j );
       totfree += j * (1 << (i + 3));
