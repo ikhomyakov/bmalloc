@@ -323,9 +323,12 @@ static void mstats( struct heap *hp )
 
 void *calloc(size_t nelem, size_t elsize)
 {
-perror("calloc error");
-exit(1);
-  return( NULL );
+  void *ret;
+  size_t sz;
+  sz = nelem*elsize;
+  ret = malloc( sz );
+  bzero(ret,sz);
+  return( ret );
 }
 
 void *memalign(size_t alignment, size_t size)
