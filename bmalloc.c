@@ -26,12 +26,10 @@ struct heap {
   unsigned int nfree[NBUCKETS];
 };
 
-static void dstats( struct heap *hp );
-static void mstats( struct heap *hp );
+static void dumpstats(void);
 static void morecore(struct heap *hp,int bucket);
 static int  init( void );
 static struct heap *gethp( void );
-static void heap_dtor(void *value);
 
 static int init_flag = 0;
 
@@ -40,14 +38,7 @@ static int    pagebucket;
 
 static pthread_key_t   key;
 
-static struct heap global_heap;
 static struct heap *tdp[MAXTD];
-
-void dumpstats(void)
-{
-  mstats(tdp[1]);
-  dstats(tdp[1]);
-}
 
 static int init( void )
 {
@@ -79,14 +70,6 @@ exit(1);
   atexit(dumpstats);
 
   return( 0 );
-}
-
-static void heap_dtor(void *value)
-{
-  struct heap *hp;
-  hp = (struct heap *)value;
-  dstats(hp);
-  mstats(hp);
 }
 
 static struct heap *gethp( void )
@@ -288,45 +271,56 @@ exit(1);
   return( res );
 }
 
-static void dstats( struct heap *hp )
+inline size_t b2sz(int bucket)
 {
-  int i, count;
-  union overhead *rv;
-  fprintf( stderr, "dstats %u\t", (unsigned int)pthread_self() );
-  for( i=0; i!=NBUCKETS; i++ ) {
-      count=0;
-      for( rv=hp->nextf[i]; rv; rv=rv->nextf ) {
-          count++;
-      }
-      if( count )
-          fprintf( stderr, "t%u b%2d c%12d ~s%12d\n", 
-                   (unsigned int)pthread_self(), i, count, (1<<(i+3))*count
-          );
-  }
+  return ((bucket<pagebucket) ? 0 : pagesz) + (1<<(bucket+3));
 }
 
-static void mstats( struct heap *hp )
+static void dumpstats( void )
 {
-  int i, j;
+  struct heap *hp;
   union overhead *p;
-  int totfree = 0,
-  totused = 0;
+  size_t totfree;
+  size_t totused;
+  size_t htotfree;
+  size_t htotused;
+  int k, b, c; 
 
-  fprintf( stderr, "mstats %u\nfree:\t", (unsigned int)pthread_self() );
+  fprintf( stderr, "\nV Memory Statistics (bmalloc: $Revision$)\n");
 
-  for( i=0; i!=NBUCKETS; i++) {
-      for( j=0,p=hp->nextf[i]; p; p=p->nextf,j++) {
+  totused=0;
+  totfree=0;
+  for( k=0; k!=MAXTD; k++) {
+
+      hp = tdp[k];
+      if( hp == NULL )
+          continue;
+
+      htotused=0;
+      htotfree=0;
+      for( b=0; b!=NBUCKETS; b++) {
+          if(hp->nmalloc[b]==0)
+               continue;
+
+          for( c=0,p=hp->nextf[b]; p; p=p->nextf,c++);
+          fprintf( stderr, "B heap=%d, bucket=%d, size=%lu, countf=%d, "
+                           "nm=%d, nf=%d, nm-nf=%d, used=%lu, free=%lu\n", 
+                   k, b, b2sz(b), c, 
+                   hp->nmalloc[b], hp->nfree[b], (hp->nmalloc[b]-hp->nfree[b]),
+                   (hp->nmalloc[b]-hp->nfree[b])*b2sz(b), b2sz(b)*c
+          );
+          htotfree += c * b2sz(b);
+          htotused += (hp->nmalloc[b]-hp->nfree[b]) * b2sz(b);
       }
-      fprintf( stderr, " %d", j );
-      totfree += j * (1 << (i + 3));
+      fprintf(stderr, "H heap=%d, used=%lu, free=%lu\n",
+                      k, htotused, htotfree
+      );
+      totused += htotused;
+      totfree += htotfree;
   }
-  fprintf( stderr, "\nused:\t" );
-  for( i=0; i!=NBUCKETS; i++) {
-      fprintf(stderr, " %d/%d", hp->nmalloc[i], hp->nfree[i]);
-      totused += (hp->nmalloc[i]-hp->nfree[i]) * (1 << (i + 3));
-  }
-  fprintf(stderr, "\n\tTotal in use: %d, total free: %d\n",
-	    totused, totfree);
+  fprintf(stderr, "S used=%d, free=%d\n",
+                      totused, totfree
+      );
 }
 
 void *calloc(size_t nelem, size_t elsize)
