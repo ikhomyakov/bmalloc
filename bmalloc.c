@@ -42,6 +42,12 @@ static pthread_key_t   key;
 static struct heap global_heap;
 static struct heap *tdp[MAXTD];
 
+void dumpstats(void)
+{
+  mstats(tdp[1]);
+  dstats(tdp[1]);
+}
+
 static int init( void )
 {
   union overhead *op;
@@ -69,7 +75,7 @@ exit(1);
       bucket++;
   }
   pagebucket = bucket;
-  /*atexit(dumpstats);*/
+  atexit(dumpstats);
 
   return( 0 );
 }
@@ -114,6 +120,7 @@ void *malloc( size_t nbytes)
   size_t n, amt;
 
   if( !init_flag ) {
+      init_flag=1;
       if( init() < 0 ) {
 perror("init error");
 exit(1);
