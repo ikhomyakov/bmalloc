@@ -24,12 +24,12 @@ struct heap {
   unsigned int nfree[NBUCKETS];
 };
 
-static void dumpstats( void );
-static void mstats( char *s );
-static void morecore(int bucket);
+static void dumpstats( struct heap *hp );
+static void mstats( struct heap *hp, char *s );
+static void morecore(struct heap *hp,int bucket);
 static int  init( void );
 static struct heap *gethp( void );
-static void key_destructor(void *value);
+static void heap_dtor(void *value);
 
 static size_t pagesz;
 static int    pagebucket;
@@ -38,8 +38,10 @@ static pthread_key_t   key;
 static int init( void )
 {
   static pthread_mutex_t initlock;
-  int bucket
+  union overhead *op;
+  int bucket;
   size_t n, amt;
+
 
   pthread_mutex_lock(&initlock);
   if( pagesz != 0 ) {
@@ -90,7 +92,7 @@ static struct heap *gethp( void )
       if( (void *)hp == (void *)-1 ) {
           return( NULL );
       }
-      pthread_setspecific(key, (void *)hd );
+      pthread_setspecific(key, (void *)hp );
   }
   return( hp );
 }
@@ -99,7 +101,7 @@ void *malloc( size_t nbytes)
 {
   struct heap *hp;
   union overhead *op;
-  int bucket
+  int bucket;
   size_t n, amt;
 
   if( pagesz == 0 ) {
@@ -138,7 +140,7 @@ void *malloc( size_t nbytes)
       }
   }
 
-  hp->nextf[bucket] = op->ov.next;
+  hp->nextf[bucket] = op->next;
   op->ov.magic  = MAGIC;
   op->ov.bucket  = bucket;
   hp->nmalloc[bucket]++;
@@ -168,10 +170,10 @@ static void morecore(struct heap *hp, int bucket)
 
   hp->nextf[bucket] = op;
   while (--nblks > 0) {
-    op->ov.next = (union overhead *)((char *)op + sz);
+    op->next = (union overhead *)((char *)op + sz);
     op = (union overhead *)((char *)op + sz);
   }
-  op->ov.next = 0;
+  op->next = 0;
 }
 
 void free(void *cp)
@@ -188,11 +190,11 @@ void free(void *cp)
 
   hp = gethp();
   if( hp == NULL ) {
-      return( NULL );
+      return;
   }
 
   bucket = op->ov.bucket;
-  op->ov.next = hp->nextf[bucket];
+  op->next = hp->nextf[bucket];
   hp->nextf[bucket] = op;
   hp->nfree[bucket]++;
 }
@@ -238,6 +240,7 @@ void *realloc(void *cp, size_t nbytes)
         return( cp );
     } else {
       free( cp );
+    }
   }
 
   if( (res=malloc(nbytes)) == NULL ) {
@@ -267,7 +270,7 @@ static void dumpstats( struct heap *hp )
   }
 }
 
-static void mstats(char *s)
+static void mstats( struct heap *hp, char *s)
 {
   int i, j;
   union overhead *p;
@@ -285,7 +288,7 @@ static void mstats(char *s)
   }
   fprintf( stderr, "\nused:\t" );
   for( i=0; i!=NBUCKETS; i++) {
-      fprintf(stderr, " %d", nmalloc[i]);
+      fprintf(stderr, " %d/%d", hp->nmalloc[i], hp->nfree[i]);
       totused += (hp->nmalloc[i]-hp->nfree[i]) * (1 << (i + 3));
   }
   fprintf(stderr, "\n\tTotal in use: %d, total free: %d\n",
