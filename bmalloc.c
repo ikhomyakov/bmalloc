@@ -57,6 +57,8 @@ static int init( void )
   }
   if( n ) {
       if( (void *)sbrk(n) == (void *)-1 ) {
+perror("sbrk error");
+exit(1);
           return( -1 );
       }
   }
@@ -86,12 +88,16 @@ static struct heap *gethp( void )
   struct heap *hp;
   tid = pthread_self();
   if( tid >= MAXTD ) {
+perror("tid >=MAXTD error");
+exit(1);
       return( NULL );
   }
   hp = tdp[tid];
   if( hp == NULL ) {
       hp = (struct heap *)sbrk(pagesz);
       if( (void *)hp == (void *)-1 ) {
+perror("sbrk error");
+exit(1);
           return( NULL );
       }
       bzero((void *)hp, pagesz);
@@ -109,11 +115,15 @@ void *malloc( size_t nbytes)
 
   if( !init_flag ) {
       if( init() < 0 ) {
+perror("init error");
+exit(1);
           return( NULL );
       }
   }
   hp = gethp();
   if( hp == NULL ) {
+perror("gethp error");
+exit(1);
        return( NULL );
   }
   
@@ -130,6 +140,8 @@ void *malloc( size_t nbytes)
   while( nbytes > amt+n ) {
       amt <<= 1;
       if( amt == 0 ) {
+perror("amt<< == 0 error");
+exit(1);
           return (NULL);
       }
       bucket++;
@@ -138,6 +150,8 @@ void *malloc( size_t nbytes)
   if( (op=hp->nextf[bucket]) == NULL ) {
       morecore(hp,bucket);
       if( (op=hp->nextf[bucket]) == NULL ) {
+perror("morecore error");
+exit(1);
           return (NULL);
       }
   }
@@ -167,8 +181,11 @@ static void morecore(struct heap *hp, int bucket)
     nblks = 1;
   }
   op = (union overhead *)sbrk(amt);
-  if ((void *)op == (void *)-1)
+  if ((void *)op == (void *)-1) {
+perror("sbrk in morecore error");
+exit(1);
     return;
+  }
 
   hp->nextf[bucket] = op;
   while (--nblks > 0) {
@@ -187,11 +204,16 @@ void free(void *cp)
   if (cp == NULL)
     return;
   op = (union overhead *)((char *)cp - sizeof (union overhead));
-  if (op->ov.magic != MAGIC)
+  if (op->ov.magic != MAGIC){
+perror("free magic error");
+exit(1);
     return;
+  }
 
   hp = gethp();
   if( hp == NULL ) {
+perror("gethp error");
+exit(1);
       return;
   }
 
@@ -219,6 +241,8 @@ void *realloc(void *cp, size_t nbytes)
       was_alloced++;
       bucket = op->ov.bucket;
   } else {
+perror("realloc did not find magic");
+exit(1);
       return( NULL );
   }
 
@@ -299,11 +323,16 @@ static void mstats( struct heap *hp )
 
 void *calloc(size_t nelem, size_t elsize)
 {
+perror("calloc error");
+exit(1);
   return( NULL );
 }
 
 void *memalign(size_t alignment, size_t size)
 {
+perror("memalign error");
+exit(1);
+
   return( NULL ); /* not supported */
 }
 
@@ -319,11 +348,17 @@ void *valloc(size_t size)
 
 int mallopt(int cmd, int value)
 {
+perror("mallopt error");
+exit(1);
+
   return(1); /* not supported */
 }
 
 struct mallinfo mallinfo(void)
 {
   static struct mallinfo ret;
+perror("mallinfo error");
+exit(1);
+
   return( ret ); /* not supported */
 }
