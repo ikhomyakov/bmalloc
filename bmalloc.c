@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <malloc.h>
@@ -8,7 +9,7 @@
 #define getpagesize() sysconf(_SC_PAGESIZE)
 #define	MAGIC 0xef
 #define	NBUCKETS 30
-
+#define MAXTD 1024
 
 union overhead {
   union	overhead *nextf;
@@ -24,34 +25,28 @@ struct heap {
   unsigned int nfree[NBUCKETS];
 };
 
-static void dumpstats( struct heap *hp );
-static void mstats( struct heap *hp, char *s );
+static void dstats( struct heap *hp );
+static void mstats( struct heap *hp );
 static void morecore(struct heap *hp,int bucket);
 static int  init( void );
 static struct heap *gethp( void );
 static void heap_dtor(void *value);
 
-static int initflag1 = 0;
-static int initflag2 = 0;
+static int init_flag = 0;
 
 static size_t pagesz;
 static int    pagebucket;
 
 static pthread_key_t   key;
 
-static int init1( void )
+static struct heap global_heap;
+static struct heap *tdp[MAXTD];
+
+static int init( void )
 {
-  static pthread_mutex_t initlock;
   union overhead *op;
   int bucket;
   size_t n, amt;
-
-
-  pthread_mutex_lock(&initlock);
-  if( pagesz != 0 ) {
-      pthread_mutex_unlock(&initlock);
-      return 0;
-  }
 
   pagesz = getpagesize();
   n = pagesz;
@@ -62,8 +57,6 @@ static int init1( void )
   }
   if( n ) {
       if( (void *)sbrk(n) == (void *)-1 ) {
-          pagesz = 0;
-          pthread_mutex_unlock(&initlock);
           return( -1 );
       }
   }
@@ -76,27 +69,33 @@ static int init1( void )
   pagebucket = bucket;
   /*atexit(dumpstats);*/
 
-  pthread_key_create(&key, heap_dtor);
-
-  pthread_mutex_unlock(&initlock);
   return( 0 );
 }
 
 static void heap_dtor(void *value)
 {
-  /* dump stats */
+  struct heap *hp;
+  hp = (struct heap *)value;
+  dstats(hp);
+  mstats(hp);
 }
 
 static struct heap *gethp( void )
 {
-  struct heap *hp = NULL;
-  hp = (struct heap *)pthread_getspecific(key);
+  pthread_t tid;
+  struct heap *hp;
+  tid = pthread_self();
+  if( tid >= MAXTD ) {
+      return( NULL );
+  }
+  hp = tdp[tid];
   if( hp == NULL ) {
       hp = (struct heap *)sbrk(pagesz);
       if( (void *)hp == (void *)-1 ) {
           return( NULL );
       }
-      pthread_setspecific(key, (void *)hp );
+      bzero((void *)hp, pagesz);
+      tdp[tid] = hp;
   }
   return( hp );
 }
@@ -108,18 +107,14 @@ void *malloc( size_t nbytes)
   int bucket;
   size_t n, amt;
 
-  if( !initflag2 ) {
-      if( !initflag1 ) {
-          if( init() < 0 ) {
-              return( NULL );
-          }
-      }
-      hp = global_heap
-  } else {
-      hp = gethp();
-      if( hp == NULL ) {
+  if( !init_flag ) {
+      if( init() < 0 ) {
           return( NULL );
       }
+  }
+  hp = gethp();
+  if( hp == NULL ) {
+       return( NULL );
   }
   
   n = pagesz - sizeof(*op);
@@ -261,10 +256,11 @@ void *realloc(void *cp, size_t nbytes)
   return( res );
 }
 
-static void dumpstats( struct heap *hp )
+static void dstats( struct heap *hp )
 {
   int i, count;
   union overhead *rv;
+  fprintf( stderr, "dstats %u\t", (unsigned int)pthread_self() );
   for( i=0; i!=NBUCKETS; i++ ) {
       count=0;
       for( rv=hp->nextf[i]; rv; rv=rv->nextf ) {
@@ -277,15 +273,14 @@ static void dumpstats( struct heap *hp )
   }
 }
 
-static void mstats( struct heap *hp, char *s)
+static void mstats( struct heap *hp )
 {
   int i, j;
   union overhead *p;
   int totfree = 0,
   totused = 0;
 
-  fprintf( stderr, "Memory allocation statistics %s %u\nfree:\t", 
-           s, (unsigned int)pthread_self() );
+  fprintf( stderr, "mstats %u\nfree:\t", (unsigned int)pthread_self() );
 
   for( i=0; i!=NBUCKETS; i++) {
       for( j=0,p=hp->nextf[i]; p; p=p->nextf,j++) {
